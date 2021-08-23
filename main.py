@@ -1,6 +1,7 @@
 import sys
 import platform
 import paramiko
+import subprocess
 from PySide2 import QtCore, QtGui, QtWidgets
 from PySide2.QtCore import (QCoreApplication, QPropertyAnimation, QDate, QDateTime, QMetaObject, QObject, QPoint, QRect, QSize, QTime, QUrl, Qt, QEvent)
 from PySide2.QtGui import (QBrush, QColor, QConicalGradient, QCursor, QFont, QFontDatabase, QIcon, QKeySequence, QLinearGradient, QPalette, QPainter, QPixmap, QRadialGradient, QWindow)
@@ -21,7 +22,15 @@ class MainScreen(QMainWindow):
 
         self.ui.ConnectBtn.clicked.connect(self.connect_server)
 
-        self.ui.ExecuteBtn.clicked.connect(self.execute_stress)
+        self.ui.CPUSExecBtn.clicked.connect(self.execute_stress)
+        self.ui.JMBatchFileBrowseBtn.clicked.connect(lambda: self.browse_files(set_text_ele= self.ui.JMBatchFileLocInp, caption= self.ui.JMBatchLblTxt.text(), filetype= 'Jmeter batch file(*.bat)'))
+        self.ui.JMScriptFileBrowseBtn.clicked.connect(lambda: self.browse_files(set_text_ele= self.ui.JMScriptFileLocInp, caption= self.ui.JMScriptLblTxt.text(), filetype= 'Jmeter Script (*.jmx)'))
+        self.ui.JMOputFolderBrowseBtn.clicked.connect(lambda: self.browse_folder(set_text_ele= self.ui.JMOputFolderLocInp, caption= self.ui.JMOputFileLblTxt.text()))
+        self.ui.JMExecBtn.clicked.connect(lambda: self.run_Jmeter(
+            JM_batch=self.ui.JMBatchFileLocInp.text(),
+            JM_script=self.ui.JMScriptFileLocInp.text(),
+            JM_res=self.ui.JMOputFolderLocInp.text() +'''/'''+ self.ui.JMOputFileInp.text()
+        ))
         self.expiry_verification()
         
 
@@ -48,35 +57,71 @@ class MainScreen(QMainWindow):
         print(''.join(stderr.readlines()))
     
     def execute_stress(self):
-        self.ui.ExecStatusTxt.setStyleSheet('color : blue')
-        self.ui.ExecStatusTxt.setText('Executing...')
-        self.ui.ExecStatusTxt.repaint()
-        self.selected_CPUper = self.ui.CPUper_RBGrp.checkedButton().text()
-        self.CPU_cores = None
-        if(self.selected_CPUper == "100%"):
-            self.CPU_cores = 4
-        elif(self.selected_CPUper == "75%"):
-            self.CPU_cores = 3
-        elif(self.selected_CPUper == "50%"):
-            self.CPU_cores = 2
-        elif(self.selected_CPUper == "25%"):
-            self.CPU_cores = 1
+        try:
+            self.ui.CPUSExecStatusTxt.setStyleSheet('color : blue')
+            self.ui.CPUSExecStatusTxt.setText('Executing...')
+            self.ui.CPUSExecStatusTxt.repaint()
+            self.selected_CPUper = self.ui.CPUper_RBGrp.checkedButton().text()
         
-        self.CPU_duration = self.ui.DurationInp.text()
-        
-        stdin, stdout, stderr = self.conn.exec_command('seq {cores} | xargs -P0 -n1 timeout {duration} md5sum /dev/zero'.format(cores = self.CPU_cores, duration = self.CPU_duration))
-        
+            self.CPU_cores = None
+            if(self.selected_CPUper == "100%"):
+                self.CPU_cores = 4
+            elif(self.selected_CPUper == "75%"):
+                self.CPU_cores = 3
+            elif(self.selected_CPUper == "50%"):
+                self.CPU_cores = 2
+            elif(self.selected_CPUper == "25%"):
+                self.CPU_cores = 1
+            
+            self.CPU_duration = self.ui.DurationInp.text()
+            
+            stdin, stdout, stderr = self.conn.exec_command('seq {cores} | xargs -P0 -n1 timeout {duration} md5sum /dev/zero'.format(cores = self.CPU_cores, duration = self.CPU_duration))
+        except Exception as e:
+            print(e)
+            self.ui.CPUSExecStatusTxt.setStyleSheet('color : red')
+            self.ui.CPUSExecStatusTxt.setText('Not Executed')
+            self.ui.CPUSExecStatusTxt.repaint()
+            return
         #print('---',''.join(stderr.readlines()),'---')
 
         #print(len(''.join(stderr.readlines())))
 
         if(len(''.join(stderr.readlines())) > 0):
-            self.ui.ExecStatusTxt.setStyleSheet('color : red')
-            self.ui.ExecStatusTxt.setText('Not Executed')
+            self.ui.CPUSExecStatusTxt.setStyleSheet('color : red')
+            self.ui.CPUSExecStatusTxt.setText('Not Executed')
         else:
-            self.ui.ExecStatusTxt.setStyleSheet('color : green')
-            self.ui.ExecStatusTxt.setText('Executed')
+            self.ui.CPUSExecStatusTxt.setStyleSheet('color : green')
+            self.ui.CPUSExecStatusTxt.setText('Executed')
 
+    def browse_files(self, set_text_ele, filetype, caption='Open File'):
+        fname = QFileDialog.getOpenFileName(self, caption, '', filetype)
+        set_text_ele.setText(str(fname[0]))
+
+    def browse_folder(self, set_text_ele, caption='Open Folder'):
+        fname = QFileDialog.getExistingDirectory(self, caption=caption)
+        set_text_ele.setText(str(fname))
+
+    def run_Jmeter(self, JM_batch, JM_script, JM_res):
+        #print(JM_res)
+        self.ui.JMExecStatusTxt.setStyleSheet('color : blue')
+        self.ui.JMExecStatusTxt.setText('Executing...')
+        self.ui.JMExecStatusTxt.repaint()
+        try:
+            process = subprocess.Popen('''"{JM_batch}" -n -t "{JM_script}" -l "{JM_res}"'''.format(JM_batch = JM_batch, JM_script = JM_script, JM_res = JM_res), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            for out in iter(process.stdout.readline, b''):
+                sys.stdout.write(str(out, 'utf-8'))
+        except Exception as e:
+            print(e)
+            self.ui.JMExecStatusTxt.setStyleSheet('color : red')
+            self.ui.JMExecStatusTxt.setText('Not Executed')
+            self.ui.JMExecStatusTxt.repaint()
+            return
+        
+        self.ui.JMExecStatusTxt.setStyleSheet('color : green')
+        self.ui.JMExecStatusTxt.setText('Executed')
+        self.ui.JMExecStatusTxt.repaint()
+
+        
     def expiry_verification(self):
         self.app_key = b'z4WgegchrnsyRaKJXWg4sN9iaqEvaVjWjfZSI2gH5jE='
         self.crypto_fer = Fernet(self.app_key)
@@ -85,9 +130,9 @@ class MainScreen(QMainWindow):
             self.enc_code = f.read()
         
         #print(self.enc_code)
-        self.dec_code = str(self.crypto_fer.decrypt(self.enc_code))
+        self.dec_code = str(self.crypto_fer.decrypt(self.enc_code), 'utf-8')
         #print(self.dec_code)
-        self.dec_code = self.dec_code[2:-1].split('-')
+        self.dec_code = self.dec_code.split('-')
         #print(self.dec_code)
         self.exp_date = date(year=int(self.dec_code[0]), month=int(self.dec_code[1]), day=int(self.dec_code[2]))
         self.curr_date = date.today()
